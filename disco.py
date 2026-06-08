@@ -129,7 +129,7 @@ def deserializar(datos_bytes, estructura, tam_bitmap):
 
     return resultado
 
-
+#eliminar porque solo es para probar que todo funciona
 def probar(ruta):
     registros = leer_archivo(ruta)
 
@@ -174,50 +174,3 @@ def probar(ruta):
 
 probar("C:/Users/lolitascim/disco/prueba.csv")
 probar("C:/Users/lolitascim/disco/prueba2.txt")
-
-
-
-
-""""
-def probar(ruta):
-    registros = leer_archivo(ruta)
-
-    print("=== REGISTROS LEIDOS ===")
-    for r in registros:
-        print(r)
-
-    estructura_db, tam_registro, tam_bitmap = estructura(registros)
-
-    print("\n=== ESTRUCTURA ===")
-    for campo in estructura_db:
-        print(campo)
-
-    print("\nTam registro:", tam_registro)
-    print("Tam bitmap:", tam_bitmap)
-
-    print("\n=== SERIALIZAR / DESERIALIZAR ===")
-
-    for i, registro in enumerate(registros):
-        binario = serializar(registro, estructura_db, tam_bitmap)
-
-        recuperado = deserializar(
-            binario,
-            estructura_db,
-            tam_bitmap
-        )
-
-        print(f"\nRegistro {i+1}")
-        print("Original    :", registro)
-        print("Recuperado  :", recuperado)
-
-        if recuperado == [
-            None if v in NULOS else
-            int(v) if estructura_db[j]['tipo'] == 'int' else
-            round(float(v), 6) if estructura_db[j]['tipo'] == 'float' else
-            v
-            for j, v in enumerate(registro)
-        ]:
-            print("OK")
-        else:
-            print("ERROR")
-"""
