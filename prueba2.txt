@@ -1,0 +1,6 @@
+Juan 20 1.75
+Ana 18 1.60
+Luis 25 
+Maria 22 1.68
+Pedro 30 1.90
+Jose 40 
