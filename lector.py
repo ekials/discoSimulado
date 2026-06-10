@@ -4,6 +4,9 @@ import math
 
 NULOS = ('', 'NULL', 'null', '\\N', None)
 
+# ─────────────────────────────────────────
+# 1. LEER ARCHIVO
+# ─────────────────────────────────────────
 def leer_archivo(ruta):
     registros = []
     cabecera  = None
@@ -24,7 +27,7 @@ def leer_archivo(ruta):
                 if not linea:
                     continue
                 if i == 0:
-                    cabecera = linea.split(' ')
+                    cabecera = linea.split(' ')   # primera línea = cabecera
                 else:
                     registros.append(linea.split(' '))
 
@@ -35,12 +38,16 @@ def leer_archivo(ruta):
 
     return cabecera, registros
 
+
+# ─────────────────────────────────────────
+# 2. DETECTAR ESTRUCTURA
+# ─────────────────────────────────────────
 def detectar_estructura(cabecera, registros):
     estructura = []
 
     for i, nombre_campo in enumerate(cabecera):
         col     = [fila[i] for fila in registros if i < len(fila)]
-        valores = [v for v in col if v not in NULOS]  # filtra nulos
+        valores = [v for v in col if v not in NULOS]
 
         if not valores:
             estructura.append({'nombre': nombre_campo, 'tipo': 'char', 'tam': 1})
@@ -67,7 +74,7 @@ def detectar_estructura(cabecera, registros):
     tam_datos    = sum(c['tam'] for c in estructura)
     tam_registro = tam_bitmap + tam_datos
 
-    print("\n=== Estructura detectada ===")
+    print("\nEstructura detectada")
     for c in estructura:
         print(f"  {c['nombre']:<15} tipo: {c['tipo']:<6}  tam: {c['tam']} bytes")
     print(f"\n  bitmap      : {tam_bitmap} byte(s)")
@@ -75,8 +82,11 @@ def detectar_estructura(cabecera, registros):
 
     return estructura, tam_registro, tam_bitmap
 
-def serializar(registro, estructura, tam_bitmap):
 
+# ─────────────────────────────────────────
+# 3. SERIALIZAR
+# ─────────────────────────────────────────
+def serializar(registro, estructura, tam_bitmap):
     bitmap = 0
     for i, valor in enumerate(registro):
         if valor not in NULOS:
@@ -85,24 +95,23 @@ def serializar(registro, estructura, tam_bitmap):
     resultado = bitmap.to_bytes(tam_bitmap, 'big')
 
     for valor, campo in zip(registro, estructura):
-        es_nulo = valor in NULOS
-
-        if es_nulo:
+        if valor in NULOS:
             resultado += b'\x00' * campo['tam']
-
         else:
             if campo['tipo'] == 'int':
                 resultado += int(valor).to_bytes(4, 'big')
-
             elif campo['tipo'] == 'float':
                 resultado += struct.pack('>f', float(valor))
-
             else:
                 encoded    = valor.encode('utf-8')
                 resultado += encoded.ljust(campo['tam'], b'\x00')
 
     return resultado
 
+
+# ─────────────────────────────────────────
+# 4. DESERIALIZAR
+# ─────────────────────────────────────────
 def deserializar(datos_bytes, estructura, tam_bitmap):
     bitmap  = int.from_bytes(datos_bytes[:tam_bitmap], 'big')
     offset  = tam_bitmap
@@ -120,66 +129,36 @@ def deserializar(datos_bytes, estructura, tam_bitmap):
 
         if campo['tipo'] == 'int':
             resultado.append(int.from_bytes(chunk, 'big'))
-
         elif campo['tipo'] == 'float':
             resultado.append(round(struct.unpack('>f', chunk)[0], 6))
-
         else:
             resultado.append(chunk.rstrip(b'\x00').decode('utf-8'))
 
     return resultado
 
 
+# ─────────────────────────────────────────
+# 5. PROBAR
+# ─────────────────────────────────────────
 def probar(ruta):
-    print("\n==============================")
-    print("LEYENDO ARCHIVO")
-    print("==============================")
-
+    print("\nLEYENDO ARCHIVO")
     cabecera, registros = leer_archivo(ruta)
 
     print("\nCabecera:")
     print(cabecera)
 
-    estructura_db, tam_registro, tam_bitmap = detectar_estructura(
-        cabecera,
-        registros
-    )
+    estructura_db, tam_registro, tam_bitmap = detectar_estructura(cabecera, registros)
 
-    print("\n==============================")
-    print("PRUEBA SERIALIZACION")
-    print("==============================")
-
+    print("\nPRUEBA SERIALIZACION")
     for i, registro in enumerate(registros):
-
-        binario = serializar(
-            registro,
-            estructura_db,
-            tam_bitmap
-        )
-
-        recuperado = deserializar(
-            binario,
-            estructura_db,
-            tam_bitmap
-        )
-
-        bitmap = int.from_bytes(
-            binario[:tam_bitmap],
-            'big'
-        )
+        binario    = serializar(registro, estructura_db, tam_bitmap)
+        recuperado = deserializar(binario, estructura_db, tam_bitmap)
+        bitmap     = int.from_bytes(binario[:tam_bitmap], 'big')
 
         print(f"\nRegistro {i+1}")
-
-        print("Original:")
-        print(registro)
-
-        print("Bitmap:")
-        print(bin(bitmap))
-
-        print("Bytes:")
-        print(binario.hex(' '))
-
-        print("Recuperado:")
-        print(recuperado)
+        print("Original:  ", registro)
+        print("Bitmap:    ", bin(bitmap))
+        print("Bytes:     ", binario.hex(' '))
+        print("Recuperado:", recuperado)
 
 probar("C:\\Users\\lolitascim\\bd\\disco\\prueba.csv")
