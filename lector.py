@@ -4,9 +4,6 @@ import math
 
 NULOS = ('', 'NULL', 'null', '\\N', None)
 
-# ─────────────────────────────────────────
-# 1. LEER ARCHIVO
-# ─────────────────────────────────────────
 def leer_archivo(ruta):
     registros = []
     cabecera  = None
@@ -39,9 +36,6 @@ def leer_archivo(ruta):
     return cabecera, registros
 
 
-# ─────────────────────────────────────────
-# 2. DETECTAR ESTRUCTURA
-# ─────────────────────────────────────────
 def detectar_estructura(cabecera, registros):
     estructura = []
 
@@ -83,9 +77,6 @@ def detectar_estructura(cabecera, registros):
     return estructura, tam_registro, tam_bitmap
 
 
-# ─────────────────────────────────────────
-# 3. SERIALIZAR
-# ─────────────────────────────────────────
 def serializar(registro, estructura, tam_bitmap):
     bitmap = 0
     for i, valor in enumerate(registro):
@@ -109,9 +100,6 @@ def serializar(registro, estructura, tam_bitmap):
     return resultado
 
 
-# ─────────────────────────────────────────
-# 4. DESERIALIZAR
-# ─────────────────────────────────────────
 def deserializar(datos_bytes, estructura, tam_bitmap):
     bitmap  = int.from_bytes(datos_bytes[:tam_bitmap], 'big')
     offset  = tam_bitmap
@@ -137,9 +125,6 @@ def deserializar(datos_bytes, estructura, tam_bitmap):
     return resultado
 
 
-# ─────────────────────────────────────────
-# 5. PROBAR
-# ─────────────────────────────────────────
 def probar(ruta):
     print("\nLEYENDO ARCHIVO")
     cabecera, registros = leer_archivo(ruta)

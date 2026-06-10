@@ -33,8 +33,6 @@ print()
 print(disco.info())
 print(disco.info_por_plato())
 
-#cargar arch
-
 print("\nArchivos de pruebita:")
 print("  1 prueba.csv ")
 print("  2 prueba2.txt ")
@@ -47,8 +45,6 @@ if opcion == "1":
 elif opcion == "2":
     ruta = "C:\\Users\\lolitascim\\bd\\disco\\prueba2.txt"
 
-
-#leer archivo
 cabecera, registros = leer_archivo("C:\\Users\\lolitascim\\bd\\disco\\prueba.csv")
 print(f"  registros leidos: {len(registros)}")
 
@@ -57,8 +53,6 @@ estructura_db, tam_registro, tam_bitmap = detectar_estructura(cabecera, registro
 print(f"\n  Estructura detectada ({tam_registro} bytes por registro):")
 for i, campo in enumerate(estructura_db):
     print(f"    Campo {i}: tipo={campo['tipo']}, tam={campo['tam']} bytes")
-
-#escr. registro en disco
 
 tabla  = []
 errores = []
@@ -80,8 +74,6 @@ for i, registro in enumerate(registros):
         errores.append(f"Registro {i+1}: {e}")
         print(f"\n  error Registro {i+1}: {e}")
         break
-
-#verificar lectura
 
 print()
 todos_ok = True
