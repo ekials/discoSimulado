@@ -1,6 +1,4 @@
-Juan 20 1.75
-Ana 18 1.60
-Luis 25 
-Maria 22 1.68
-Pedro 30 1.90
-Jose 40 
+item_code location type quantity unit cost currency lead_time min_stock shelf_life reorder_point reorder_qty max_stock safety_stock reserved_stock damaged_stock category priority status condition
+PS-SL-A287 LT-1 PRODUCT 25 EA 31250 USD 2 19 365 50 30 100 10 30 10 Street_Lighting B ONHAND NEW
+PS-SL-C193 LT-1 PRODUCT 49 EA 61250 USD 2 55 365 50 30 100 10 30 10 Street_Lighting C ONHAND NEW
+9664146 LT-2 ITEM 259 EA 267288 USD 0 42 365 200 30 400 100 30 10 Secondary Chassis A ONHAND,NEW
