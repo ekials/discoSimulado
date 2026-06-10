@@ -146,4 +146,4 @@ def probar(ruta):
         print("Bytes:     ", binario.hex(' '))
         print("Recuperado:", recuperado)
 
-probar("C:\\Users\\lolitascim\\bd\\disco\\prueba.csv")
+#probar("C:\\Users\\lolitascim\\bd\\disco\\prueba.csv")

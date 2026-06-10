@@ -1,0 +1,23 @@
+CREATE TABLE INVENTORY(
+productID VARCHAR(15) NOT NULL,		
+location VARCHAR(7) NOT NULL,
+inventoryType VARCHAR(10) NOT NULL,
+quantity INTEGER NOT NULL,	
+quantityUnits VARCHAR(5) NOT NULL,
+value INTEGER NOT NULL,
+valueCurrency VARCHAR(5) NOT NULL,	
+reservationOrders INTEGER NOT NULL,	
+daysOfSupply INTEGER NOT NULL,	
+shelfLife INTEGER NOT NULL,	
+reorderLevel INTEGER NOT NULL,	
+expectedLeadTime INTEGER NOT NULL,	
+quantityUpperThreshold INTEGER NOT NULL,	
+quantityLowerThreshold INTEGER NOT NULL,	
+daysOfSupplyUpperThreshold INTEGER NOT NULL,	
+daysOfSupplyLowerThreshold INTEGER NOT NULL,		
+plannerCode VARCHAR(40) NOT NULL,	
+velocityCode VARCHAR(5) NOT NULL,	
+inventoryParentType VARCHAR(3) NOT NULL,	
+class VARCHAR(5) NOT NULL,	
+); 
+
