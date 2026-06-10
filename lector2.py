@@ -1,149 +1,118 @@
 import csv
 import struct
 import math
+import re
 
-NULOS = ('', 'NULL', 'null', '\\N', None)
+def tipo_sql_a_interno(tipo_sql):
+    tipo_sql = tipo_sql.strip().upper()
 
-def leer_archivo(ruta):
-    registros = []
-    cabecera  = None
+    if tipo_sql == 'INTEGER' or tipo_sql == 'INT':
+        return 'int', 4
 
-    if ruta.endswith('.csv'):
-        with open(ruta, newline='', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            for i, fila in enumerate(reader):
-                if i == 0:
-                    cabecera = [c.strip() for c in fila]
-                else:
-                    if any(v.strip() for v in fila):
-                        registros.append([v.strip() for v in fila])
-    else:
-        with open(ruta, encoding='utf-8') as f:
-            for i, linea in enumerate(f):
-                linea = linea.strip()
-                if not linea:
-                    continue
-                if i == 0:
-                    cabecera = linea.split(' ')   # primera línea = cabecera
-                else:
-                    registros.append(linea.split(' '))
+    if tipo_sql == 'FLOAT' or tipo_sql == 'REAL' or tipo_sql == 'DOUBLE':
+        return 'float', 4
 
-    max_cols = max(len(fila) for fila in registros)
-    for fila in registros:
-        while len(fila) < max_cols:
-            fila.append(None)
+    match = re.match(r'VARCHAR\s*\((\d+)\)', tipo_sql)
+    if match:
+        return 'char', int(match.group(1))
 
-    return cabecera, registros
+    match = re.match(r'CHAR\s*\((\d+)\)', tipo_sql)
+    if match:
+        return 'char', int(match.group(1))
 
+    raise ValueError(f"tipo SQL no reconocido: {tipo_sql}")
 
-def detectar_estructura(cabecera, registros):
-    estructura = []
-
-    for i, nombre_campo in enumerate(cabecera):
-        col     = [fila[i] for fila in registros if i < len(fila)]
-        valores = [v for v in col if v not in NULOS]
-
-        if not valores:
-            estructura.append({'nombre': nombre_campo, 'tipo': 'char', 'tam': 1})
-            continue
-
-        try:
-            [int(v) for v in valores]
-            estructura.append({'nombre': nombre_campo, 'tipo': 'int', 'tam': 4})
-            continue
-        except (ValueError, TypeError):
-            pass
-
-        try:
-            [float(v) for v in valores]
-            estructura.append({'nombre': nombre_campo, 'tipo': 'float', 'tam': 4})
-            continue
-        except (ValueError, TypeError):
-            pass
-
-        max_tam = max(len(v.encode('utf-8')) for v in valores)
-        estructura.append({'nombre': nombre_campo, 'tipo': 'char', 'tam': max_tam})
-
-    tam_bitmap   = math.ceil(len(estructura) / 8)
-    tam_datos    = sum(c['tam'] for c in estructura)
-    tam_registro = tam_bitmap + tam_datos
-
-    print("\nEstructura detectada")
-    for c in estructura:
-        print(f"  {c['nombre']:<15} tipo: {c['tipo']:<6}  tam: {c['tam']} bytes")
-    print(f"\n  bitmap      : {tam_bitmap} byte(s)")
-    print(f"  tam_registro: {tam_registro} bytes")
-
-    return estructura, tam_registro, tam_bitmap
-
-
-def serializar(registro, estructura, tam_bitmap):
-    bitmap = 0
-    for i, valor in enumerate(registro):
-        if valor not in NULOS:
-            bitmap |= (1 << i)
-
-    resultado = bitmap.to_bytes(tam_bitmap, 'big')
-
+def serializar(registro, estructura):
+    resultado = b''
     for valor, campo in zip(registro, estructura):
-        if valor in NULOS:
-            resultado += b'\x00' * campo['tam']
+        if campo['tipo'] == 'int':
+            resultado += int(valor).to_bytes(4, 'big')
+        elif campo['tipo'] == 'float':
+            resultado += struct.pack('>f', float(valor))
         else:
-            if campo['tipo'] == 'int':
-                resultado += int(valor).to_bytes(4, 'big')
-            elif campo['tipo'] == 'float':
-                resultado += struct.pack('>f', float(valor))
-            else:
-                encoded    = valor.encode('utf-8')
-                resultado += encoded.ljust(campo['tam'], b'\x00')
-
+            encoded    = valor.encode('utf-8')
+            resultado += encoded[:campo['tam']].ljust(campo['tam'], b'\x00')
     return resultado
 
 
-def deserializar(datos_bytes, estructura, tam_bitmap):
-    bitmap  = int.from_bytes(datos_bytes[:tam_bitmap], 'big')
-    offset  = tam_bitmap
+def deserializar(datos_bytes, estructura):
+    offset    = 0
     resultado = []
-
-    for i, campo in enumerate(estructura):
+    for campo in estructura:
         chunk   = datos_bytes[offset : offset + campo['tam']]
         offset += campo['tam']
-
-        tiene_valor = (bitmap >> i) & 1
-
-        if not tiene_valor:
-            resultado.append(None)
-            continue
-
         if campo['tipo'] == 'int':
             resultado.append(int.from_bytes(chunk, 'big'))
         elif campo['tipo'] == 'float':
             resultado.append(round(struct.unpack('>f', chunk)[0], 6))
         else:
             resultado.append(chunk.rstrip(b'\x00').decode('utf-8'))
-
     return resultado
 
 
-def probar(ruta):
-    print("\nLEYENDO ARCHIVO")
-    cabecera, registros = leer_archivo(ruta)
+def leer_estructura_sql(ruta_sql):
+    estructura = []
+    with open(ruta_sql, encoding='utf-8') as f:
+        contenido = f.read()
+    match = re.search(r'CREATE\s+TABLE\s+\w+\s*\((.+)\)', contenido, re.DOTALL | re.IGNORECASE)
+    if not match:
+        raise ValueError("no se encontró CREATE TABLE en el archivo")
+    cuerpo = match.group(1)
+    for linea in cuerpo.splitlines():
+        linea = linea.strip().rstrip(',').strip()
+        if not linea:
+            continue
+        if linea.upper().startswith(('PRIMARY', 'FOREIGN', 'UNIQUE', 'CHECK', 'INDEX', 'KEY', 'CONSTRAINT')):
+            continue
+        partes = linea.split()
+        if len(partes) < 2:
+            continue
+        nombre   = partes[0]
+        tipo_raw = partes[1]
+        try:
+            tipo, tam = tipo_sql_a_interno(tipo_raw)
+        except ValueError:
+            continue
+        estructura.append({'nombre': nombre, 'tipo': tipo, 'tam': tam})
 
-    print("\nCabecera:")
-    print(cabecera)
+    tam_registro = sum(c['tam'] for c in estructura)
 
-    estructura_db, tam_registro, tam_bitmap = detectar_estructura(cabecera, registros)
+    print("\nEstructura desde SQL")
+    for c in estructura:
+        print(f"  {c['nombre']:<35} tipo: {c['tipo']:<6}  tam: {c['tam']} bytes")
+    print(f"  tam_registro: {tam_registro} bytes")
+
+    return estructura
+
+
+def leer_csv(ruta_csv):
+    registros = []
+    with open(ruta_csv, newline='', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        for fila in reader:
+            if any(v.strip() for v in fila):
+                registros.append([v.strip() for v in fila])
+    return registros
+
+
+def probar(ruta_sql, ruta_csv):
+    print("\nLEYENDO ESTRUCTURA SQL")
+    estructura_db = leer_estructura_sql(ruta_sql)
+    tam_registro  = sum(c['tam'] for c in estructura_db)
+
+    print("\nLEYENDO CSV")
+    registros = leer_csv(ruta_csv)
+    print(f"registros leidos: {len(registros)}")
 
     print("\nPRUEBA SERIALIZACION")
     for i, registro in enumerate(registros):
-        binario    = serializar(registro, estructura_db, tam_bitmap)
-        recuperado = deserializar(binario, estructura_db, tam_bitmap)
-        bitmap     = int.from_bytes(binario[:tam_bitmap], 'big')
+        binario    = serializar(registro, estructura_db)
+        recuperado = deserializar(binario, estructura_db)
 
         print(f"\nRegistro {i+1}")
         print("Original:  ", registro)
-        print("Bitmap:    ", bin(bitmap))
         print("Bytes:     ", binario.hex(' '))
         print("Recuperado:", recuperado)
 
-#probar("C:\\Users\\lolitascim\\bd\\disco\\prueba.csv")
+
+probar("C:\\Users\\lolitascim\\bd\\disco\\estructura.txt", "C:\\Users\\lolitascim\\bd\\disco\\prueba.csv")
