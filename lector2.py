@@ -115,4 +115,4 @@ def probar(ruta_sql, ruta_csv):
         print("Recuperado:", recuperado)
 
 
-probar("C:\\Users\\lolitascim\\bd\\disco\\estructura.txt", "C:\\Users\\lolitascim\\bd\\disco\\prueba.csv")
+#probar("C:\\Users\\lolitascim\\bd\\disco\\estructura.txt", "C:\\Users\\lolitascim\\bd\\disco\\prueba.csv")

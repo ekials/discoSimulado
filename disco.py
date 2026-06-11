@@ -14,12 +14,13 @@ class Disco:
     # cada entrada del directorio ocupa 4 bytes (int offset en bytes)
     TAM_ENTRADA_DIR = 4
 
-    def __init__(self, n_platos, n_pistas, n_sectores, bytes_por_sector):
+    def __init__(self, n_platos, n_pistas, n_sectores, bytes_por_sector, max_registros=1024):
         self.n_platos         = n_platos
         self.n_pistas         = n_pistas
         self.n_sectores       = n_sectores
         self.bytes_por_sector = bytes_por_sector
         self.offset_actual = 0
+        
         self.sectores         = {}
         self._construir()
 
