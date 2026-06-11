@@ -1,176 +1,179 @@
-import csv
-import struct
 import math
-#valores null en caso se presenten
-NULOS = ('', 'NULL', 'null', '\\N', None)
 
 
-def leer_archivo(ruta):
-    registros = []
-    #['Ana','','1.60']
-    #['Luis','25','1.80']
-    if ruta.endswith('.csv'):
-        with open(ruta, newline='', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            for fila in reader:
-                if any(v.strip() for v in fila):#ignorar filas vacias
-                    registros.append(fila)
-    else:
-        with open(ruta, encoding='utf-8') as f:
-            for linea in f:
-                linea = linea.strip()
-                if linea:
-                    registros.append(linea.split(' '))
-    #$igualar cantidad de columnas en caso de vaciooo
-    # ['Juan','20','1.75'],
-    #['Ana',None,None],
-    max_cols = max(len(fila) for fila in registros)
-    for fila in registros:
-        while len(fila) < max_cols:
-            fila.append(None)
-
-    return registros
-
-def estructura(registros):
-    estructura = []
-#recorrer por columna como columnar???? by chance
-    for col in zip(*registros):
-        valores = [v for v in col if v not in NULOS]#no nulos discr
-
-        if not valores:
-            estructura.append({'tipo': 'char', 'tam': 1})
-            #igual le pones 1 byte que indique que no hay nada
-            continue
-
-        try:
-            [int(v) for v in valores]
-            estructura.append({'tipo': 'int', 'tam': 4})
-            continue
-        except (ValueError, TypeError):
-            pass
-
-        try:
-            [float(v) for v in valores]
-            estructura.append({'tipo': 'float', 'tam': 4})
-            continue
-        except (ValueError, TypeError):
-            pass
-#buscar el mas grande
-        max_tam = max(len(v.encode('utf-8')) for v in valores)
-        estructura.append({'tipo': 'char', 'tam': max_tam})
-    
-    num_campos    = len(estructura)
-    tam_bitmap    = math.ceil(num_campos / 8)   # bytes del bitmap
-    tam_datos     = sum(c['tam'] for c in estructura)
-    tam_registro  = tam_bitmap + tam_datos
-
-    return estructura, tam_registro, tam_bitmap
-# ['Juan', None, '1.75']
-# campo 0 -> 1
-# campo 1 -> 0
-# campo 2 -> 1
-# tonces el bitmap eso 101 wa
-
-#para binario pues
-def serializar(registro, estructura, tam_bitmap):
-    # construir bitmap
-    bitmap = 0
-    for i, valor in enumerate(registro):
-        if valor not in NULOS:
-            bitmap |= (1 << i)      # bit i = 1 → tiene valor
-
-    resultado = bitmap.to_bytes(tam_bitmap, 'big')
-
-    # ahora peor campos
-    for valor, campo in zip(registro, estructura):
-        es_nulo = valor in NULOS
-
-        if es_nulo:
-            resultado += b'\x00' * campo['tam']   # rellenar de ceros
-
-        else:
-            if campo['tipo'] == 'int':
-                resultado += int(valor).to_bytes(4, 'big')
-
-            elif campo['tipo'] == 'float':
-                resultado += struct.pack('>f', float(valor))
-
-            else:  # char
-                encoded = valor.encode('utf-8')
-                resultado += encoded.ljust(campo['tam'], b'\x00')
-
-    return resultado
-
-def deserializar(datos_bytes, estructura, tam_bitmap):
-    # bitmap
-    bitmap = int.from_bytes(datos_bytes[:tam_bitmap], 'big')
-    offset = tam_bitmap
-
-    resultado = []
-
-    for i, campo in enumerate(estructura):
-        chunk    = datos_bytes[offset : offset + campo['tam']]
-        offset  += campo['tam']
-
-        tiene_valor = (bitmap >> i) & 1   # 1 = tiene valor, 0 = nulo
-
-        if not tiene_valor:
-            resultado.append(None)
-            continue
-
-        if campo['tipo'] == 'int':
-            resultado.append(int.from_bytes(chunk, 'big'))
-
-        elif campo['tipo'] == 'float':
-            resultado.append(round(struct.unpack('>f', chunk)[0], 6))
-
-        else:  # char
-            resultado.append(chunk.rstrip(b'\x00').decode('utf-8'))
-
-    return resultado
-
-#eliminar porque solo es para probar que todo funciona
-def probar(ruta):
-    registros = leer_archivo(ruta)
-
-    print("leido")
-    for r in registros:
-        print(r)
-
-    estructura_db, tam_registro, tam_bitmap = estructura(registros)
-
-    print("\nEstrcutura")
-    for campo in estructura_db:
-        print(campo)
-
-    print("\nTam registr:", tam_registro)
-    print("Tam bitmap:", tam_bitmap)
+class Sector:
+    def __init__(self, plato, superficie, pista, numero, tam_bytes):
+        self.plato      = plato
+        self.superficie = superficie
+        self.pista      = pista
+        self.numero     = numero
+        self.datos      = bytearray(tam_bytes)
 
 
-    for i, registro in enumerate(registros):
-        binario = serializar(registro, estructura_db, tam_bitmap)
+class Disco:
+    # cada entrada del directorio ocupa 4 bytes (int offset en bytes)
+    TAM_ENTRADA_DIR = 4
 
-        recuperado = deserializar(
-            binario,
-            estructura_db,
-            tam_bitmap
+    def __init__(self, n_platos, n_pistas, n_sectores, bytes_por_sector):
+        self.n_platos         = n_platos
+        self.n_pistas         = n_pistas
+        self.n_sectores       = n_sectores
+        self.bytes_por_sector = bytes_por_sector
+        self.offset_actual = 0
+        self.sectores         = {}
+        self._construir()
+
+    def _construir(self):
+        for p in range(self.n_platos):
+            for s in range(2):
+                for t in range(self.n_pistas):
+                    for sec in range(self.n_sectores):
+                        self.sectores[(p, s, t, sec)] = Sector(
+                            p, s, t, sec,
+                            self.bytes_por_sector
+                        )
+
+
+    def _offset_a_dir(self, offset_byte: int) -> tuple:
+        sectores_por_plato = 2 * self.n_pistas * self.n_sectores
+        bytes_por_plato    = sectores_por_plato * self.bytes_por_sector
+
+        plato           = offset_byte // bytes_por_plato
+        resto           = offset_byte  % bytes_por_plato
+        sector_en_plato = resto // self.bytes_por_sector
+        byte_en_sector  = resto  % self.bytes_por_sector
+
+        sup    = sector_en_plato // (self.n_pistas * self.n_sectores)
+        resto2 = sector_en_plato  % (self.n_pistas * self.n_sectores)
+        pista  = resto2 // self.n_sectores
+        sec    = resto2  % self.n_sectores
+
+        return plato, sup, pista, sec, byte_en_sector
+
+
+    def _escribir_bytes(self, offset_byte: int, datos: bytes):
+        escritos = 0
+        while escritos < len(datos):
+            plato, sup, pista, sec, byte_en_sector = self._offset_a_dir(
+                offset_byte + escritos
+            )
+            sector  = self.sectores[(plato, sup, pista, sec)]
+            espacio = self.bytes_por_sector - byte_en_sector
+            chunk   = datos[escritos : escritos + espacio]
+            sector.datos[byte_en_sector : byte_en_sector + len(chunk)] = chunk
+            escritos += len(chunk)
+
+    def _leer_bytes(self, offset_byte: int, n_bytes: int) -> bytes:
+        datos  = b''
+        leidos = 0
+        while leidos < n_bytes:
+            plato, sup, pista, sec, byte_en_sector = self._offset_a_dir(
+                offset_byte + leidos
+            )
+            sector   = self.sectores[(plato, sup, pista, sec)]
+            espacio  = self.bytes_por_sector - byte_en_sector
+            por_leer = min(espacio, n_bytes - leidos)
+            datos   += bytes(sector.datos[byte_en_sector : byte_en_sector + por_leer])
+            leidos  += por_leer
+        return datos
+
+
+    def escribir_registro(self, datos: bytes):
+        tam = len(datos)
+
+        offset_inicial = self.offset_actual
+
+        if offset_inicial + tam > self.capacidad_total_bytes():
+            raise Exception("Disco lleno")
+
+        self._escribir_bytes(offset_inicial, datos)
+
+        self.offset_actual += tam
+
+        return offset_inicial
+
+    def leer_registro(self, offset_inicial, tam_registro):
+        return self._leer_bytes(offset_inicial, tam_registro)
+
+    def direccion_legible(self, offset_inicial, tam_registro):
+        offset_byte = offset_inicial
+        leidos       = 0
+        lineas       = []
+        i            = 0
+
+        while leidos < tam_registro:
+            plato, sup, pista, sec, byte_en_sector = self._offset_a_dir(
+                offset_byte + leidos
+            )
+            espacio  = self.bytes_por_sector - byte_en_sector
+            por_leer = min(espacio, tam_registro - leidos)
+
+            lineas.append(
+                f"  Fragmento {i+1}: "
+                f"Plato {plato} | Sup {sup} | "
+                f"Pista {pista} | Sector {sec} | "
+                f"Bytes {byte_en_sector}-{byte_en_sector + por_leer - 1}"
+            )
+            leidos += por_leer
+            i      += 1
+
+        return "\n".join(lineas)
+
+    def capacidad_total_bytes(self):
+        return (
+            self.n_platos * 2 *
+            self.n_pistas *
+            self.n_sectores *
+            self.bytes_por_sector
         )
 
-        print(f"\nRegistro {i+1}")
-        print("Original :", registro)
-        print("Recuperado :", recuperado)
+    def total_sectores(self):
+        return self.n_platos * 2 * self.n_pistas * self.n_sectores
 
-        if recuperado == [
-            None if v in NULOS else
-            int(v) if estructura_db[j]['tipo'] == 'int' else
-            round(float(v), 6) if estructura_db[j]['tipo'] == 'float' else
-            v
-            for j, v in enumerate(registro)
-        ]: 
-            print("esta bien")
+    def info(self):
+        return (
+            f"DISCO SIMULADO\n"
+            f"Platos            : {self.n_platos}\n"
+            f"Superficies       : 2 por plato\n"
+            f"Pistas/superficie : {self.n_pistas}\n"
+            f"Sectores/pista    : {self.n_sectores}\n"
+            f"Bytes/sector      : {self.bytes_por_sector}\n"
+            f"Capacidad total   : {self.capacidad_total_bytes()} bytes\n"
+            f"Bytes usados      : {self.offset_actual}\n"
+        )
 
+    def info_por_plato(self):
+        lineas    = ["Uso por plato:"]
+        cap_plato = 2 * self.n_pistas * self.n_sectores
 
+        bytes_usados_total = self.offset_actual
 
+        for p in range(self.n_platos):
 
-probar("C:/Users/lolitascim/disco/prueba.csv")
-probar("C:/Users/lolitascim/disco/prueba2.txt")
+            bytes_por_plato = (
+                2 * self.n_pistas *
+                self.n_sectores *
+                self.bytes_por_sector
+            )
+
+            offset_inicio = p * bytes_por_plato
+            offset_fin    = offset_inicio + bytes_por_plato
+
+            bytes_usados_plato = max(
+                0,
+                min(bytes_usados_total, offset_fin) - offset_inicio
+            )
+
+            sectores_usados = math.ceil(
+                bytes_usados_plato / self.bytes_por_sector
+            )
+
+            porcentaje = sectores_usados / cap_plato * 100
+
+            lineas.append(
+                f"  Plato {p}: "
+                f"{sectores_usados}/{cap_plato} sectores usados "
+                f"({porcentaje:.1f}%)"
+            )
+
+        return "\n".join(lineas)
