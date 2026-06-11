@@ -125,25 +125,4 @@ def deserializar(datos_bytes, estructura, tam_bitmap):
     return resultado
 
 
-def probar(ruta):
-    print("\nLEYENDO ARCHIVO")
-    cabecera, registros = leer_archivo(ruta)
-
-    print("\nCabecera:")
-    print(cabecera)
-
-    estructura_db, tam_registro, tam_bitmap = detectar_estructura(cabecera, registros)
-
-    print("\nPRUEBA SERIALIZACION")
-    for i, registro in enumerate(registros):
-        binario    = serializar(registro, estructura_db, tam_bitmap)
-        recuperado = deserializar(binario, estructura_db, tam_bitmap)
-        bitmap     = int.from_bytes(binario[:tam_bitmap], 'big')
-
-        print(f"\nRegistro {i+1}")
-        print("Original:  ", registro)
-        print("Bitmap:    ", bin(bitmap))
-        print("Bytes:     ", binario.hex(' '))
-        print("Recuperado:", recuperado)
-
 #probar("C:\\Users\\lolitascim\\bd\\disco\\prueba.csv")
