@@ -33,12 +33,12 @@ print(disco.info_por_plato())
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 
 # estructura_db = leer_estructura_sql(os.path.join(CARPETA, "estructura.txt"))
-estructura_db = leer_estructura_sql("C:\\Users\\lolitascim\\bd\\disco\\estructura.txt")
+estructura_db = leer_estructura_sql("C:\\Users\\lolitascim\\bd\\trabajo_50%\\estructura.txt")
 tam_registro  = sum(c['tam'] for c in estructura_db)
 
 print(f"\ntam_registro : {tam_registro} bytes")
 
-registros = leer_csv("C:\\Users\\lolitascim\\bd\\disco\\prueba.csv")
+registros = leer_csv("C:\\Users\\lolitascim\\bd\\trabajo_50%\\prueba.csv")
 print(f"registros    : {len(registros)}")
 
 
@@ -53,6 +53,11 @@ bytes_por_plato = 2 * n_pistas * n_sectores * bytes_por_sector
 for i, registro in enumerate(registros):
     try:
         datos_bytes = serializar(registro, estructura_db)
+
+        print("\nDEBUG SERIALIZAR")
+        print("registro:", registro)
+        print("hex:", datos_bytes.hex())
+
         offset      = disco.escribir_registro(datos_bytes)
 
         n_registro  = offset // tam_registro
@@ -64,6 +69,8 @@ for i, registro in enumerate(registros):
         })
 
         rec = deserializar(datos_bytes, estructura_db)
+        print("deserializado:", rec)
+
         tabla_offsets.append((offset, rec))
 
         print(f"\nRegistro {i+1}")
@@ -81,33 +88,7 @@ print("\n")
 print("VERIFICANDO LECTURA")
 print("")
 todos_ok = True
-"""
-for i, entrada in enumerate(tabla):
-    datos_leidos = disco.leer_registro(entrada['offset'], tam_registro)
-    recuperado   = deserializar(datos_leidos, estructura_db)
-    original     = entrada['original']
 
-    ok = True
-    for orig, rec, campo in zip(original, recuperado, estructura_db):
-        if rec is None:
-            ok = False
-            break
-        if campo['tipo'] == 'char':
-            if str(orig)[:campo['tam']] != str(rec):
-                ok = False
-                break
-        else:
-            if str(orig) != str(rec):
-                ok = False
-                break
-
-    if not ok:
-        todos_ok = False
-
-    print(f"\nRegistro {i+1}:  {'ok' if ok else 'ERROR'}")
-    print(f"  original    : {original}")
-    print(f"  desde disco : {recuperado}")
-"""
 print("\n")
 print("ESTADO DEL DISCO")
 print(disco.info())
@@ -182,6 +163,10 @@ while True:
                 offset = offset_desde_nreg(n_reg, tam_registro)
                 datos  = disco.leer_registro(offset, tam_registro)
                 rec    = deserializar(datos, estructura_db)
+                print("\nDEBUG LEER DISCO")
+                print("offset:", offset)
+                print("bytes:", datos.hex())
+
                 off_campo_en_registro = offset_campo(estructura_db, idx_campo)
                 offset_dato           = offset + off_campo_en_registro
                 p, sup, pi, sec, byte           = disco._offset_a_dir(offset)
@@ -213,6 +198,9 @@ while True:
                 datos  = disco.leer_registro(offset, tam_registro)
                 rec    = deserializar(datos, estructura_db)
 
+                print("recuperado:", rec)
+
+
                 off_campo_en_registro = offset_campo(estructura_db, idx_campo)
                 offset_dato           = offset + off_campo_en_registro
 
@@ -231,3 +219,33 @@ while True:
     # avl se elimina de RAM
     raiz = None
     print("  indice AVL liberado")
+
+
+
+    """
+for i, entrada in enumerate(tabla):
+    datos_leidos = disco.leer_registro(entrada['offset'], tam_registro)
+    recuperado   = deserializar(datos_leidos, estructura_db)
+    original     = entrada['original']
+
+    ok = True
+    for orig, rec, campo in zip(original, recuperado, estructura_db):
+        if rec is None:
+            ok = False
+            break
+        if campo['tipo'] == 'char':
+            if str(orig)[:campo['tam']] != str(rec):
+                ok = False
+                break
+        else:
+            if str(orig) != str(rec):
+                ok = False
+                break
+
+    if not ok:
+        todos_ok = False
+
+    print(f"\nRegistro {i+1}:  {'ok' if ok else 'ERROR'}")
+    print(f"  original    : {original}")
+    print(f"  desde disco : {recuperado}")
+"""

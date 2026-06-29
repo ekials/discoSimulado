@@ -1,6 +1,4 @@
 import math
-
-
 class Sector:
     def __init__(self, plato, superficie, pista, numero, tam_bytes):
         self.plato      = plato
@@ -11,7 +9,6 @@ class Sector:
 
 
 class Disco:
-    # cada entrada del directorio ocupa 4 bytes (int offset en bytes)
     TAM_ENTRADA_DIR = 4
 
     def __init__(self, n_platos, n_pistas, n_sectores, bytes_por_sector, max_registros=1024):
@@ -119,6 +116,30 @@ class Disco:
             i      += 1
 
         return "\n".join(lineas)
+
+    def sectores_ocupados(self, offset_inicial, tam):
+        sectores = []
+
+        leidos = 0
+
+        while leidos < tam:
+
+            plato, sup, pista, sec, byte = self._offset_a_dir(
+                offset_inicial + leidos
+            )
+
+            sectores.append(
+                (plato, sup, pista, sec)
+            )
+
+            espacio = self.bytes_por_sector - byte
+
+            leidos += min(
+                espacio,
+                tam - leidos
+            )
+
+        return list(dict.fromkeys(sectores))
 
     def capacidad_total_bytes(self):
         return (

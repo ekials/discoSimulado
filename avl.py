@@ -110,9 +110,13 @@ def construir_indice(registros_raw, estructura, campo, tam_registro):
 
     for offset, registro in registros_raw:
         valor_raw = registro[idx_campo]
+        
+        if valor_raw is None:
+            continue
+
         if tipo == 'int':
             clave = int(valor_raw)
-        elif tipo == 'float':
+        elif tipo in ('float', 'double'):
             clave = float(valor_raw)
         else:
             clave = str(valor_raw)

@@ -1,9 +1,10 @@
 import tkinter as tk
+import math
 from tkinter import ttk, filedialog, messagebox
 import os
 
-RUTA_SQL = "C:\\Users\\lolitascim\\bd\\disco\\estructura.txt"
-RUTA_CSV = "C:\\Users\\lolitascim\\bd\\disco\\prueba.csv"
+RUTA_SQL = "C:\\Users\\lolitascim\\bd\\trabajo_50%\\estructura.txt"
+RUTA_CSV = "C:\\Users\\lolitascim\\bd\\trabajo_50%\\prueba.csv"
 
 BG          = "#0f0f1a"
 BG2         = "#1a1a2e"
@@ -354,8 +355,10 @@ class PantallaCarga(tk.Frame):
             return
 
         try:
+            
             self.app.estructura_db = leer_estructura_sql(self.ruta_sql.get())
-            self.app.tam_registro  = sum(c['tam'] for c in self.app.estructura_db)
+            tam_bitmap = math.ceil(len(self.app.estructura_db)/8)
+            self.app.tam_registro  =  tam_bitmap + sum(c['tam'] for c in self.app.estructura_db)
             registros              = leer_csv(self.ruta_csv.get())
             self.app.registros     = registros
             self.app.tabla_offsets = []
@@ -547,9 +550,11 @@ class PantallaBusqueda(tk.Frame):
             fg=VERDE
         )
 
+        tam_bitmap = math.ceil(len(self.app.estructura_db) / 8)
+
         primer_nreg = resultado[0][0]
         primer_offset = offset_desde_nreg(primer_nreg, self.app.tam_registro)
-        off_campo = sum(
+        off_campo = tam_bitmap + sum(
             self.app.estructura_db[i]['tam']
             for i in range(idx_campo)
         )
@@ -572,12 +577,12 @@ class PantallaBusqueda(tk.Frame):
             datos   = self.app.disco.leer_registro(offset, self.app.tam_registro)
             rec     = deserializar(datos, self.app.estructura_db)
 
-            off_c   = sum(self.app.estructura_db[j]['tam'] for j in range(idx_campo))
+            off_c   = tam_bitmap +  sum(self.app.estructura_db[j]['tam'] for j in range(idx_campo))
             off_d   = offset + off_c
             p_r2, s_r2, pi_r2, sec_r2, byte_r = self.app.disco._offset_a_dir(offset)
             p_d2, s_d2, pi_d2, sec_d2, byte_d = self.app.disco._offset_a_dir(off_d)
 
-            self.txt.insert("end", f"\n[{i}] n_reg={n_reg}  offset={offset}\n", "clave")
+            self.txt.insert("end", f"\n[{i}] n_reg={n_reg} \n", "clave")
             self.txt.insert("end",
                 f"  registro → Plato:{p_r2} Sup:{s_r2} Pista:{pi_r2} Sector:{sec_r2} Byte:{byte_r}\n",
                 "dir_reg"
