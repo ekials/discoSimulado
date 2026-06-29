@@ -1,4 +1,5 @@
 import math
+
 class Sector:
     def __init__(self, plato, superficie, pista, numero, tam_bytes):
         self.plato      = plato
@@ -7,17 +8,14 @@ class Sector:
         self.numero     = numero
         self.datos      = bytearray(tam_bytes)
 
-
 class Disco:
-    TAM_ENTRADA_DIR = 4
-
     def __init__(self, n_platos, n_pistas, n_sectores, bytes_por_sector, max_registros=1024):
         self.n_platos         = n_platos
         self.n_pistas         = n_pistas
         self.n_sectores       = n_sectores
         self.bytes_por_sector = bytes_por_sector
-        self.offset_actual = 0
-        
+        self.offset_actual    = 0
+        self.n_registros      = 0
         self.sectores         = {}
         self._construir()
 
@@ -30,7 +28,6 @@ class Disco:
                             p, s, t, sec,
                             self.bytes_por_sector
                         )
-
 
     def _offset_a_dir(self, offset_byte: int) -> tuple:
         sectores_por_plato = 2 * self.n_pistas * self.n_sectores
@@ -47,7 +44,6 @@ class Disco:
         sec    = resto2  % self.n_sectores
 
         return plato, sup, pista, sec, byte_en_sector
-
 
     def _escribir_bytes(self, offset_byte: int, datos: bytes):
         escritos = 0
@@ -75,71 +71,187 @@ class Disco:
             leidos  += por_leer
         return datos
 
+    def escribir_registro(self, datos_bytes: bytes, estructura: list) -> int:
+        """
+        Recibe el registro YA serializado (bytes crudos, sin padding) y la
+        estructura (para saber dónde corta cada campo). Escribe campo por
+        campo metiendo padding de ceros cuando un campo no cabe entero en
+        el sector actual. Retorna el offset_inicial del registro.
+        """
+        offset         = self.offset_actual
+        offset_inicial = offset
+        pos_bytes      = 0   # posición dentro de datos_bytes (sin padding)
 
-    def escribir_registro(self, datos: bytes):
-        tam = len(datos)
+        for campo in estructura:
+            tam_campo      = campo['tam']
+            byte_en_sector = offset % self.bytes_por_sector
+            espacio        = self.bytes_por_sector - byte_en_sector
 
-        offset_inicial = self.offset_actual
+            # no cabe → padding
+            if espacio < tam_campo and byte_en_sector != 0:
+                self._escribir_bytes(offset, b'\x00' * espacio)
+                offset += espacio
 
-        if offset_inicial + tam > self.capacidad_total_bytes():
-            raise Exception("Disco lleno")
+            chunk = datos_bytes[pos_bytes : pos_bytes + tam_campo]
+            self._escribir_bytes(offset, chunk)
+            offset    += tam_campo
+            pos_bytes += tam_campo
 
-        self._escribir_bytes(offset_inicial, datos)
-
-        self.offset_actual += tam
-
+        self.offset_actual = offset
+        self.n_registros  += 1
         return offset_inicial
 
-    def leer_registro(self, offset_inicial, tam_registro):
-        return self._leer_bytes(offset_inicial, tam_registro)
+    def leer_registro(self, offset_inicial: int, estructura: list) -> bytes:
+        """
+        Hace el mismo cálculo geométrico que escribir_registro — por cada
+        campo verifica si hubo padding y lo salta. Retorna bytes limpios
+        (sin padding), listos para pasar a deserializar().
+        """
+        offset    = offset_inicial
+        resultado = b''
 
-    def direccion_legible(self, offset_inicial, tam_registro):
-        offset_byte = offset_inicial
-        leidos       = 0
-        lineas       = []
-        i            = 0
+        for campo in estructura:
+            tam_campo = campo['tam']
 
-        while leidos < tam_registro:
+            byte_en_sector = offset % self.bytes_por_sector
+            espacio        = self.bytes_por_sector - byte_en_sector
+
+            if espacio < tam_campo and byte_en_sector != 0:
+                offset += espacio
+
+            chunk      = self._leer_bytes(offset, tam_campo)
+            resultado += chunk
+            offset    += tam_campo
+
+        return resultado
+
+    def offset_campo(self, offset_inicial: int, estructura: list, idx_campo: int) -> int:
+        """
+        Calcula el offset real (con padding incluido) donde empieza el
+        campo idx_campo dentro del registro que arranca en offset_inicial.
+        """
+        offset = offset_inicial
+        for i, campo in enumerate(estructura):
+            if i == idx_campo:
+                return offset
+            tam_campo      = campo['tam']
+            byte_en_sector = offset % self.bytes_por_sector
+            espacio        = self.bytes_por_sector - byte_en_sector
+            if espacio < tam_campo and byte_en_sector != 0:
+                offset += espacio
+            offset += tam_campo
+        return offset
+
+    def sectores_campo(self, offset_inicial: int, estructura: list, idx_campo: int) -> list:
+        """
+        Calcula todos los sectores (plato, sup, pista, sec) que ocupa
+        un campo específico dentro del registro, incluyendo el caso en
+        que el campo cruce el límite de un sector y siga en el siguiente.
+        """
+        offset_campo = self.offset_campo(offset_inicial, estructura, idx_campo)
+        tam_campo    = estructura[idx_campo]['tam']
+
+        sectores  = []
+        recorrido = 0
+        while recorrido < tam_campo:
             plato, sup, pista, sec, byte_en_sector = self._offset_a_dir(
-                offset_byte + leidos
+                offset_campo + recorrido
             )
-            espacio  = self.bytes_por_sector - byte_en_sector
-            por_leer = min(espacio, tam_registro - leidos)
+            sectores.append((plato, sup, pista, sec))
+            espacio    = self.bytes_por_sector - byte_en_sector
+            recorrido += espacio
 
+        return list(dict.fromkeys(sectores))
+
+    def direccion_legible(self, offset_inicial: int, estructura: list) -> str:
+        offset = offset_inicial
+        lineas = []
+
+        for i, campo in enumerate(estructura):
+            tam_campo = campo['tam']
+
+            byte_en_sector = offset % self.bytes_por_sector
+            espacio        = self.bytes_por_sector - byte_en_sector
+
+            if espacio < tam_campo and byte_en_sector != 0:
+                offset += espacio
+
+            plato, sup, pista, sec, byte = self._offset_a_dir(offset)
             lineas.append(
-                f"  Fragmento {i+1}: "
+                f"  Campo {i+1} ({campo['nombre']}): "
                 f"Plato {plato} | Sup {sup} | "
                 f"Pista {pista} | Sector {sec} | "
-                f"Bytes {byte_en_sector}-{byte_en_sector + por_leer - 1}"
+                f"Byte {byte}-{byte + tam_campo - 1}"
             )
-            leidos += por_leer
-            i      += 1
+            offset += tam_campo
 
         return "\n".join(lineas)
 
-    def sectores_ocupados(self, offset_inicial, tam):
+    def sectores_ocupados(self, offset_inicial, estructura):
+        offset   = offset_inicial
         sectores = []
 
-        leidos = 0
+        for campo in estructura:
+            tam_campo      = campo['tam']
+            byte_en_sector = offset % self.bytes_por_sector
+            espacio        = self.bytes_por_sector - byte_en_sector
 
-        while leidos < tam:
+            if espacio < tam_campo and byte_en_sector != 0:
+                offset += espacio
 
-            plato, sup, pista, sec, byte = self._offset_a_dir(
-                offset_inicial + leidos
-            )
-
-            sectores.append(
-                (plato, sup, pista, sec)
-            )
-
-            espacio = self.bytes_por_sector - byte
-
-            leidos += min(
-                espacio,
-                tam - leidos
-            )
+            plato, sup, pista, sec, _ = self._offset_a_dir(offset)
+            sectores.append((plato, sup, pista, sec))
+            offset += tam_campo
 
         return list(dict.fromkeys(sectores))
+
+    def campos_en_sector(self, direccion: tuple, tabla_offsets: list, estructura: list) -> list:
+        """
+        Dado un sector (plato, sup, pista, sec) y la tabla de registros
+        (offset, valores), devuelve una lista de tuplas
+        (offset_registro, nombre_campo, valor) para cada campo cuyo dato
+        tiene al menos un byte dentro de ese sector exacto. No incluye
+        padding porque solo se reportan campos reales con datos.
+        """
+        p_obj, s_obj, t_obj, sec_obj = direccion
+        resultado = []
+
+        for offset_reg, registro in tabla_offsets:
+            offset = offset_reg
+            for idx_campo, campo in enumerate(estructura):
+                tam_campo      = campo['tam']
+                byte_en_sector = offset % self.bytes_por_sector
+                espacio        = self.bytes_por_sector - byte_en_sector
+
+                if espacio < tam_campo and byte_en_sector != 0:
+                    offset += espacio
+
+                # sectores que toca este campo en particular
+                inicio_campo = offset
+                fin_campo    = offset + tam_campo - 1  # último byte (inclusive)
+
+                p1, s1, t1, sec1, _ = self._offset_a_dir(inicio_campo)
+                p2, s2, t2, sec2, _ = self._offset_a_dir(fin_campo)
+
+                toca_sector = (p1, s1, t1, sec1) == direccion or (p2, s2, t2, sec2) == direccion
+
+                if not toca_sector and inicio_campo != fin_campo:
+                    # el campo puede cruzar varios sectores intermedios;
+                    # solo revisamos si el sector buscado cae en ese rango
+                    recorrido = inicio_campo
+                    while recorrido <= fin_campo:
+                        pp, ss, tt, secsec, ben = self._offset_a_dir(recorrido)
+                        if (pp, ss, tt, secsec) == direccion:
+                            toca_sector = True
+                            break
+                        recorrido += self.bytes_por_sector - ben
+
+                if toca_sector:
+                    resultado.append((offset_reg, campo['nombre'], registro[idx_campo]))
+
+                offset += tam_campo
+
+        return resultado
 
     def capacidad_total_bytes(self):
         return (
@@ -168,29 +280,13 @@ class Disco:
         lineas    = ["Uso por plato:"]
         cap_plato = 2 * self.n_pistas * self.n_sectores
 
-        bytes_usados_total = self.offset_actual
-
         for p in range(self.n_platos):
-
-            bytes_por_plato = (
-                2 * self.n_pistas *
-                self.n_sectores *
-                self.bytes_por_sector
-            )
-
-            offset_inicio = p * bytes_por_plato
-            offset_fin    = offset_inicio + bytes_por_plato
-
-            bytes_usados_plato = max(
-                0,
-                min(bytes_usados_total, offset_fin) - offset_inicio
-            )
-
-            sectores_usados = math.ceil(
-                bytes_usados_plato / self.bytes_por_sector
-            )
-
-            porcentaje = sectores_usados / cap_plato * 100
+            bytes_por_plato    = 2 * self.n_pistas * self.n_sectores * self.bytes_por_sector
+            offset_inicio      = p * bytes_por_plato
+            offset_fin         = offset_inicio + bytes_por_plato
+            bytes_usados_plato = max(0, min(self.offset_actual, offset_fin) - offset_inicio)
+            sectores_usados    = math.ceil(bytes_usados_plato / self.bytes_por_sector)
+            porcentaje         = sectores_usados / cap_plato * 100
 
             lineas.append(
                 f"  Plato {p}: "

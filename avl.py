@@ -1,11 +1,10 @@
 class NodoAVL:
-    def __init__(self, clave, n_registro, plato):
+    def __init__(self, clave, offset, plato):
         self.clave     = clave
-        self.registros = [(n_registro, plato)]
+        self.registros = [(offset, plato)]
         self.izq       = None
         self.der       = None
         self.altura    = 1
-
 
 def _altura(nodo):
     return nodo.altura if nodo else 0
@@ -34,21 +33,18 @@ def _rotar_izq(x):
     _actualizar_altura(y)
     return y
 
-def insertar(nodo, clave, n_registro, plato):
+def insertar(nodo, clave, offset, plato):
     if nodo is None:
-        return NodoAVL(clave, n_registro, plato)
-
+        return NodoAVL(clave, offset, plato)
     if clave < nodo.clave:
-        nodo.izq = insertar(nodo.izq, clave, n_registro, plato)
+        nodo.izq = insertar(nodo.izq, clave, offset, plato)
     elif clave > nodo.clave:
-        nodo.der = insertar(nodo.der, clave, n_registro, plato)
+        nodo.der = insertar(nodo.der, clave, offset, plato)
     else:
-        nodo.registros.append((n_registro, plato))
+        nodo.registros.append((offset, plato))
         return nodo
-
     _actualizar_altura(nodo)
     b = _balance(nodo)
-
     if b > 1 and clave < nodo.izq.clave:
         return _rotar_der(nodo)
     if b < -1 and clave > nodo.der.clave:
@@ -59,9 +55,7 @@ def insertar(nodo, clave, n_registro, plato):
     if b < -1 and clave < nodo.der.clave:
         nodo.der = _rotar_der(nodo.der)
         return _rotar_izq(nodo)
-
     return nodo
-
 
 def buscar(nodo, clave):
     if nodo is None:
@@ -72,48 +66,33 @@ def buscar(nodo, clave):
         return buscar(nodo.izq, clave)
     return buscar(nodo.der, clave)
 
-
 def buscar_rango(nodo, clave_min, clave_max, resultados=None):
     if resultados is None:
         resultados = []
     if nodo is None:
         return resultados
-
     if clave_min < nodo.clave:
         buscar_rango(nodo.izq, clave_min, clave_max, resultados)
-
     if clave_min <= nodo.clave <= clave_max:
         resultados.extend(nodo.registros)
-
     if clave_max > nodo.clave:
         buscar_rango(nodo.der, clave_min, clave_max, resultados)
-
     return resultados
 
-
-def offset_desde_nreg(n_registro, tam_registro):
-    return n_registro * tam_registro
-
-def offset_campo(estructura, idx_campo):
-    return sum(estructura[i]['tam'] for i in range(idx_campo))
-
-def construir_indice(registros_raw, estructura, campo, tam_registro):
+def construir_indice(registros_raw, estructura, campo):
     idx_campo = next(
         (i for i, c in enumerate(estructura) if c['nombre'] == campo),
         None
     )
     if idx_campo is None:
         raise ValueError(f"campo '{campo}' no existe en la estructura")
-
     tipo = estructura[idx_campo]['tipo']
     raiz = None
-
-    for offset, registro in registros_raw:
+    for offset, registro in registros_raw:      # offset ya es el real del disco
         valor_raw = registro[idx_campo]
-        
+
         if valor_raw is None:
             continue
-
         if tipo == 'int':
             clave = int(valor_raw)
         elif tipo in ('float', 'double'):
@@ -121,7 +100,5 @@ def construir_indice(registros_raw, estructura, campo, tam_registro):
         else:
             clave = str(valor_raw)
 
-        n_registro = offset // tam_registro
-        raiz = insertar(raiz, clave, n_registro, 0)
-
+        raiz = insertar(raiz, clave, offset, 0)   # guarda offset real, no n_registro
     return raiz
