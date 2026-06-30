@@ -3,8 +3,9 @@ import math
 from tkinter import ttk, messagebox
 import os
 
-RUTA_SQL = "C:\\Users\\lolitascim\\bd\\trabajo_50%\\estructura.txt"
-RUTA_CSV = "C:\\Users\\lolitascim\\bd\\trabajo_50%\\prueba.csv"
+RUTA_SQL = "C:\\Users\\lolitascim\\bd\\disco\\estructura.txt"
+RUTA_CSV = "C:\\Users\\lolitascim\\bd\\disco\\prueba.csv"
+
 
 BG          = "#0f0f1a"
 BG2         = "#1a1a2e"
@@ -34,14 +35,12 @@ class App(tk.Tk):
         self.geometry("1100x750")
         self.resizable(True, True)
 
-        # estado compartido entre pantallas
         self.disco         = None
         self.estructura_db = None
         self.tam_registro  = 0
         self.registros     = None
         self.tabla_offsets = []
 
-        # contenedor principal
         self.container = tk.Frame(self, bg=BG)
         self.container.pack(fill="both", expand=True)
 
@@ -67,10 +66,10 @@ class DiscoVisual(tk.Canvas):
         super().__init__(parent, bg=BG, highlightthickness=0, **kwargs)
         self.disco              = None
         self.tam_registro       = 0
-        self.sectores_registro  = []   # lista de (p, s, pi, sec) resaltados amarillo
-        self.sectores_dato      = []   # lista de (p, s, pi, sec) resaltados rojo
+        self.sectores_registro  = []   
+        self.sectores_dato      = []   
         self.n_registros        = 0
-        self.on_click_sector    = on_click_sector   # callback(direccion_sector)
+        self.on_click_sector    = on_click_sector   
         self.bind("<Button-1>", self._click)
 
     def actualizar(self, disco, tam_registro, n_registros=0, sectores_registro=None, sectores_dato=None):
@@ -104,7 +103,8 @@ class DiscoVisual(tk.Canvas):
         if ancho < 10:
             ancho = 900
 
-        bytes_usados   = self.n_registros * self.tam_registro if self.tam_registro else 0
+        #bytes_usados   = self.n_registros * self.tam_registro if self.tam_registro else 0
+        bytes_usados = disco.offset_actual    
         bytes_por_plato = 2 * disco.n_pistas * disco.n_sectores * disco.bytes_por_sector
 
         PAD     = 24
@@ -112,16 +112,16 @@ class DiscoVisual(tk.Canvas):
         GAP_S   = 5    # gap entre superficies
         H_LABEL = 26
 
-        # calcular tamaño de sector — más grande que antes
         total_secs  = disco.n_pistas * disco.n_sectores
-        ancho_disp  = ancho - 2 * PAD - 70   # 70 para labels izquierda
-        sec_w       = max(14, (ancho_disp // total_secs) - 3)
+        ancho_disp  = ancho - 2 * PAD - 70   
+        #sec_w       = max(14, (ancho_disp // total_secs) - 3)
+        sec_w       = min(18, max(8, (ancho_disp // total_secs) - 2))
         sec_h       = 34
 
         y = PAD
 
         for p in range(disco.n_platos):
-            # título plato
+            
             self.create_text(
                 PAD, y + H_LABEL // 2,
                 text=f"Plato {p}",
@@ -131,7 +131,6 @@ class DiscoVisual(tk.Canvas):
             y += H_LABEL
 
             for s in range(2):
-                # label superficie
                 self.create_text(
                     PAD + 4, y + sec_h // 2,
                     text=f"S{s}",
@@ -151,12 +150,12 @@ class DiscoVisual(tk.Canvas):
                             sec * disco.bytes_por_sector
                         )
 
-                        # color según estado
                         if addr in self.sectores_dato:
                             color = SECTOR_DATO
                         elif addr in self.sectores_registro:
                             color = SECTOR_REGISTRO
-                        elif offset_byte < bytes_usados:
+                        #elif offset_byte < bytes_usados:
+                        elif offset_byte < bytes_usados + disco.bytes_por_sector: 
                             color = SECTOR_OCUPADO
                         else:
                             color = SECTOR_LIBRE
@@ -176,7 +175,11 @@ class DiscoVisual(tk.Canvas):
 
             y += GAP_P
 
-        # leyenda
+        total_secs = disco.n_pistas * disco.n_sectores
+        ancho_real = PAD + 62 + total_secs * (sec_w + 3) + PAD
+        alto_real  = y + 60
+        self.config(scrollregion=(0, 0, ancho_real, alto_real))
+
         items = [
             (SECTOR_LIBRE,    "libre"),
             (SECTOR_OCUPADO,  "ocupado"),
@@ -184,11 +187,11 @@ class DiscoVisual(tk.Canvas):
             (SECTOR_DATO,     "dato buscado"),
         ]
         lx = PAD
-        ly = y + 8
+        ly = y + 12
         for color, label in items:
-            self.create_rectangle(lx, ly, lx+12, ly+12, fill=color, outline="")
-            self.create_text(lx+16, ly+6, text=label, fill=TEXT_DIM, font=FONT_SMALL, anchor="w")
-            lx += 130
+            self.create_rectangle(lx, ly, lx + 14, ly + 14, fill=color, outline="")
+            self.create_text(lx + 20, ly + 7, text=label, fill=TEXT_DIM, font=FONT_SMALL, anchor="w")
+            lx += len(label) * 7 + 30
 
 class PantallaConfig(tk.Frame):
     def __init__(self, parent, app):
@@ -275,20 +278,34 @@ class PantallaCarga(tk.Frame):
                                    bg=BG, fg=TEXT_DIM)
         self.estado_lbl.pack(pady=(12, 0))
 
-        # panel inferior: disco + detalle de sector
         inf = tk.Frame(self, bg=BG)
         inf.pack(fill="both", expand=True, padx=0, pady=0)
         inf.grid_columnconfigure(0, weight=3)
         inf.grid_columnconfigure(1, weight=2)
         inf.grid_rowconfigure(0, weight=1)
 
-        # disco visual izquierda
-        self.canvas = DiscoVisual(inf, on_click_sector=self.click_sector,
-                                   width=700, height=420)
-        self.canvas.grid(row=0, column=0, sticky="nsew", padx=12, pady=10)
+        #self.canvas = DiscoVisual(inf, on_click_sector=self.click_sector, width=700, height=420)
+        #self.canvas.grid(row=0, column=0, sticky="nsew", padx=12, pady=10)
+        #self.canvas.bind("<Configure>", lambda e: self.canvas.dibujar())
+
+        canvas_frame = tk.Frame(inf, bg=BG)
+        canvas_frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=10)
+        canvas_frame.grid_rowconfigure(0, weight=1)
+        canvas_frame.grid_columnconfigure(0, weight=1)
+
+        self.canvas = DiscoVisual(canvas_frame, on_click_sector=self.click_sector,
+                                width=700, height=420)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+
+        h_scroll = tk.Scrollbar(canvas_frame, orient="horizontal",
+                                command=self.canvas.xview, bg=BG2)
+        h_scroll.grid(row=1, column=0, sticky="ew")
+        self.canvas.config(xscrollcommand=h_scroll.set, scrollregion=(0, 0, 2000, 600))
         self.canvas.bind("<Configure>", lambda e: self.canvas.dibujar())
 
-        # detalle de sector derecha
+        self.canvas.bind("<Shift-MouseWheel>", lambda e: self.canvas.xview_scroll(
+            -1 if e.delta > 0 else 1, "units"))
+        
         det_frame = tk.Frame(inf, bg=BG)
         det_frame.grid(row=0, column=1, sticky="nsew", padx=(0, 12), pady=10)
         det_frame.grid_rowconfigure(1, weight=1)
@@ -311,7 +328,6 @@ class PantallaCarga(tk.Frame):
         self.det_txt.tag_config("campo", foreground=TEXT_DIM)
         self.det_txt.tag_config("valor", foreground=ACCENT)
 
-        # botón siguiente
         tk.Button(self, text="buscar →",
                   font=FONT_LABEL, bg=ACCENT2, fg="white",
                   relief="flat", padx=20, pady=8,
@@ -359,23 +375,37 @@ class PantallaCarga(tk.Frame):
             self.app.registros     = registros
             self.app.tabla_offsets = []
 
-            for registro in registros:
-                datos_bytes = serializar(registro, self.app.estructura_db)
-                offset      = self.app.disco.escribir_registro(datos_bytes, self.app.estructura_db)
-                rec         = deserializar(datos_bytes, self.app.estructura_db)
-                self.app.tabla_offsets.append((offset, rec))
+            insertados_ok = 0
+            disco_lleno   = False
+
+            for i, registro in enumerate(registros):
+                try:
+                    datos_bytes = serializar(registro, self.app.estructura_db)
+                    offset      = self.app.disco.escribir_registro(datos_bytes, self.app.estructura_db)
+                    rec         = deserializar(datos_bytes, self.app.estructura_db)
+                    self.app.tabla_offsets.append((offset, rec))
+                    insertados_ok += 1
+                except Exception:
+                    disco_lleno = True
+                    break
 
             n   = len(self.app.tabla_offsets)
             cap = self.app.disco.capacidad_total_bytes()
-            used = n * self.app.tam_registro
 
+            if disco_lleno:
+                self.estado_lbl.config(
+                    text=f"disco lleno: se insertaron {insertados_ok} de {len(registros)} registros  |  "
+                        f"tam_registro: {self.app.tam_registro} bytes",
+                    fg=AMARILLO
+                )
+            else:
+                self.estado_lbl.config(
+                    text=f"{n} registros insertados  |  "
+                        f"{self.app.disco.offset_actual}/{cap} bytes usados  |  "
+                        f"tam_registro: {self.app.tam_registro} bytes",
+                    fg=VERDE
+                )
 
-            self.estado_lbl.config(
-                text=f"{n} registros insertados  |  "
-                     f"{used}/{cap} bytes usados  |  "
-                     f"tam_registro: {self.app.tam_registro} bytes",
-                fg=VERDE
-            )
             self.canvas.actualizar(self.app.disco, self.app.tam_registro, n)
 
         except Exception as e:
@@ -404,7 +434,6 @@ class PantallaBusqueda(tk.Frame):
                   command=lambda: app.mostrar(PantallaCarga)
                   ).pack(side="right", padx=20, pady=12)
 
-        # controles
         ctrl = tk.Frame(self, bg=BG2)
         ctrl.pack(fill="x", padx=0, pady=0)
 
@@ -445,19 +474,32 @@ class PantallaBusqueda(tk.Frame):
                   cursor="hand2", command=self.buscar
                   ).pack(side="left", padx=20)
 
-        # panel inferior: disco + resultados
         inf = tk.Frame(self, bg=BG)
         inf.pack(fill="both", expand=True, padx=0, pady=0)
         inf.grid_columnconfigure(0, weight=2)
         inf.grid_columnconfigure(1, weight=3)
         inf.grid_rowconfigure(0, weight=1)
 
-        # disco visual izquierda
-        self.canvas = DiscoVisual(inf, width=400, height=400)
-        self.canvas.grid(row=0, column=0, sticky="nsew", padx=12, pady=10)
+        #self.canvas = DiscoVisual(inf, width=400, height=400)
+        #self.canvas.grid(row=0, column=0, sticky="nsew", padx=12, pady=10)
+        #self.canvas.bind("<Configure>", lambda e: self.canvas.dibujar())
+        canvas_frame2 = tk.Frame(inf, bg=BG)
+        canvas_frame2.grid(row=0, column=0, sticky="nsew", padx=12, pady=10)
+        canvas_frame2.grid_rowconfigure(0, weight=1)
+        canvas_frame2.grid_columnconfigure(0, weight=1)
+
+        self.canvas = DiscoVisual(canvas_frame2, width=400, height=400)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+
+        h_scroll2 = tk.Scrollbar(canvas_frame2, orient="horizontal",
+                                command=self.canvas.xview, bg=BG2)
+        h_scroll2.grid(row=1, column=0, sticky="ew")
+        self.canvas.config(xscrollcommand=h_scroll2.set, scrollregion=(0, 0, 2000, 600))
         self.canvas.bind("<Configure>", lambda e: self.canvas.dibujar())
 
-        # resultados derecha
+        self.canvas.bind("<Shift-MouseWheel>", lambda e: self.canvas.xview_scroll(
+            -1 if e.delta > 0 else 1, "units"))
+        
         res_frame = tk.Frame(inf, bg=BG)
         res_frame.grid(row=0, column=1, sticky="nsew", padx=(0, 12), pady=10)
         res_frame.grid_rowconfigure(1, weight=1)
@@ -476,7 +518,6 @@ class PantallaBusqueda(tk.Frame):
         sb.grid(row=1, column=1, sticky="ns")
         self.txt.config(yscrollcommand=sb.set)
 
-        # tags de color en el text
         self.txt.tag_config("clave",    foreground=AMARILLO)
         self.txt.tag_config("dir_reg",  foreground=SECTOR_REGISTRO)
         self.txt.tag_config("dir_dato", foreground=SECTOR_DATO)
@@ -515,7 +556,9 @@ class PantallaBusqueda(tk.Frame):
         def convertir(v):
             if tipo == 'int':   return int(v)
             if tipo == 'float': return float(v)
-            return v
+            if tipo == 'double': return float(v)
+            #return v
+            return v.lower()
 
         try:
             v1 = convertir(self.val1.get().strip())
@@ -583,8 +626,6 @@ class PantallaBusqueda(tk.Frame):
 
             self.txt.insert("end", "\n")
 
-        # quitamos de "registro" los sectores que también son "dato" para
-        # que el rojo (más específico) siempre se vea encima del amarillo
         sectores_registro_total = [
             s for s in dict.fromkeys(sectores_registro_total)
             if s not in sectores_dato_total

@@ -71,42 +71,60 @@ class Disco:
             leidos  += por_leer
         return datos
 
-    def escribir_registro(self, datos_bytes: bytes, estructura: list) -> int:
-        """
-        Recibe el registro YA serializado (bytes crudos, sin padding) y la
-        estructura (para saber dónde corta cada campo). Escribe campo por
-        campo metiendo padding de ceros cuando un campo no cabe entero en
-        el sector actual. Retorna el offset_inicial del registro.
-        """
-        offset         = self.offset_actual
-        offset_inicial = offset
-        pos_bytes      = 0   # posición dentro de datos_bytes (sin padding)
-
+    def _calcular_tam_con_padding(self, offset_inicial: int, estructura: list) -> int:
+        offset = offset_inicial
         for campo in estructura:
             tam_campo      = campo['tam']
             byte_en_sector = offset % self.bytes_por_sector
             espacio        = self.bytes_por_sector - byte_en_sector
-
-            # no cabe → padding
             if espacio < tam_campo and byte_en_sector != 0:
-                self._escribir_bytes(offset, b'\x00' * espacio)
-                offset += espacio
+                offset += espacio          
+            offset += tam_campo
+        return offset - offset_inicial
 
-            chunk = datos_bytes[pos_bytes : pos_bytes + tam_campo]
-            self._escribir_bytes(offset, chunk)
-            offset    += tam_campo
-            pos_bytes += tam_campo
+    def escribir_registro(self, datos_bytes: bytes, estructura: list) -> int:
+ 
+        tam_real = self._calcular_tam_con_padding(self.offset_actual, estructura)
+        libres   = self.capacidad_total_bytes() - self.offset_actual
 
-        self.offset_actual = offset
-        self.n_registros  += 1
-        return offset_inicial
+        if tam_real > libres:
+            raise Exception(
+                f"Disco lleno: el registro necesita {tam_real} bytes reales "
+                f"(datos + padding) pero solo quedan {libres} bytes libres.\n"
+                f"  Registros insertados hasta ahora: {self.n_registros}\n"
+                f"  Capacidad total: {self.capacidad_total_bytes()} bytes"
+            )
+
+        offset_backup = self.offset_actual
+        offset        = self.offset_actual
+        offset_inicial = offset
+        pos_bytes      = 0
+
+        try:
+            for campo in estructura:
+                tam_campo      = campo['tam']
+                byte_en_sector = offset % self.bytes_por_sector
+                espacio        = self.bytes_por_sector - byte_en_sector
+
+                if espacio < tam_campo and byte_en_sector != 0:
+                    self._escribir_bytes(offset, b'\x00' * espacio)
+                    offset += espacio
+
+                chunk = datos_bytes[pos_bytes : pos_bytes + tam_campo]
+                self._escribir_bytes(offset, chunk)
+                offset    += tam_campo
+                pos_bytes += tam_campo
+
+            self.offset_actual = offset
+            self.n_registros  += 1
+            return offset_inicial
+
+        except Exception as e:
+            self.offset_actual = offset_backup
+            raise Exception(f"Error durante escritura, cambios revertidos: {e}")
+
 
     def leer_registro(self, offset_inicial: int, estructura: list) -> bytes:
-        """
-        Hace el mismo cálculo geométrico que escribir_registro — por cada
-        campo verifica si hubo padding y lo salta. Retorna bytes limpios
-        (sin padding), listos para pasar a deserializar().
-        """
         offset    = offset_inicial
         resultado = b''
 
@@ -126,42 +144,28 @@ class Disco:
         return resultado
 
     def offset_campo(self, offset_inicial: int, estructura: list, idx_campo: int) -> int:
-        """
-        Calcula el offset real (con padding incluido) donde empieza el
-        campo idx_campo dentro del registro que arranca en offset_inicial.
-        """
         offset = offset_inicial
         for i, campo in enumerate(estructura):
-            if i == idx_campo:
-                return offset
             tam_campo      = campo['tam']
             byte_en_sector = offset % self.bytes_por_sector
             espacio        = self.bytes_por_sector - byte_en_sector
             if espacio < tam_campo and byte_en_sector != 0:
                 offset += espacio
+            if i == idx_campo:
+                return offset
             offset += tam_campo
         return offset
 
     def sectores_campo(self, offset_inicial: int, estructura: list, idx_campo: int) -> list:
         """
-        Calcula todos los sectores (plato, sup, pista, sec) que ocupa
-        un campo específico dentro del registro, incluyendo el caso en
-        que el campo cruce el límite de un sector y siga en el siguiente.
+        Devuelve el (único) sector donde vive el campo. Como escribir_registro
+        nunca parte un campo entre sectores (si no cabe, lo manda completo
+        al siguiente sector con padding), el campo siempre vive en un solo
+        sector — nunca en dos o más.
         """
         offset_campo = self.offset_campo(offset_inicial, estructura, idx_campo)
-        tam_campo    = estructura[idx_campo]['tam']
-
-        sectores  = []
-        recorrido = 0
-        while recorrido < tam_campo:
-            plato, sup, pista, sec, byte_en_sector = self._offset_a_dir(
-                offset_campo + recorrido
-            )
-            sectores.append((plato, sup, pista, sec))
-            espacio    = self.bytes_por_sector - byte_en_sector
-            recorrido += espacio
-
-        return list(dict.fromkeys(sectores))
+        plato, sup, pista, sec, _ = self._offset_a_dir(offset_campo)
+        return [(plato, sup, pista, sec)]
 
     def direccion_legible(self, offset_inicial: int, estructura: list) -> str:
         offset = offset_inicial
@@ -208,12 +212,10 @@ class Disco:
     def campos_en_sector(self, direccion: tuple, tabla_offsets: list, estructura: list) -> list:
         """
         Dado un sector (plato, sup, pista, sec) y la tabla de registros
-        (offset, valores), devuelve una lista de tuplas
-        (offset_registro, nombre_campo, valor) para cada campo cuyo dato
-        tiene al menos un byte dentro de ese sector exacto. No incluye
-        padding porque solo se reportan campos reales con datos.
+        (offset, valores), devuelve (offset_registro, nombre_campo, valor)
+        para cada campo que vive en ese sector exacto. Como un campo nunca
+        se parte entre sectores, basta comparar el sector de inicio.
         """
-        p_obj, s_obj, t_obj, sec_obj = direccion
         resultado = []
 
         for offset_reg, registro in tabla_offsets:
@@ -226,27 +228,9 @@ class Disco:
                 if espacio < tam_campo and byte_en_sector != 0:
                     offset += espacio
 
-                # sectores que toca este campo en particular
-                inicio_campo = offset
-                fin_campo    = offset + tam_campo - 1  # último byte (inclusive)
+                plato, sup, pista, sec, _ = self._offset_a_dir(offset)
 
-                p1, s1, t1, sec1, _ = self._offset_a_dir(inicio_campo)
-                p2, s2, t2, sec2, _ = self._offset_a_dir(fin_campo)
-
-                toca_sector = (p1, s1, t1, sec1) == direccion or (p2, s2, t2, sec2) == direccion
-
-                if not toca_sector and inicio_campo != fin_campo:
-                    # el campo puede cruzar varios sectores intermedios;
-                    # solo revisamos si el sector buscado cae en ese rango
-                    recorrido = inicio_campo
-                    while recorrido <= fin_campo:
-                        pp, ss, tt, secsec, ben = self._offset_a_dir(recorrido)
-                        if (pp, ss, tt, secsec) == direccion:
-                            toca_sector = True
-                            break
-                        recorrido += self.bytes_por_sector - ben
-
-                if toca_sector:
+                if (plato, sup, pista, sec) == direccion:
                     resultado.append((offset_reg, campo['nombre'], registro[idx_campo]))
 
                 offset += tam_campo

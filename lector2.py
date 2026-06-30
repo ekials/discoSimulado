@@ -26,6 +26,10 @@ def tipo_sql_a_interno(tipo_sql):
     if match:
         return 'char', int(match.group(1))
 
+    match = re.match(r'DECIMAL\s*\(\d+\s*,\s*\d+\)', tipo_sql)
+    if match:
+        return 'double', 8
+    
     raise ValueError(f"tipo SQL no reconocido: {tipo_sql}")
 
 
@@ -102,7 +106,14 @@ def leer_estructura_sql(ruta_sql):
         if len(partes) < 2:
             continue
         nombre   = partes[0]
+        #tipo_raw = partes[1]
         tipo_raw = partes[1]
+        if '(' in tipo_raw and ')' not in tipo_raw:
+            for extra in partes[2:]:
+                tipo_raw += extra
+                if ')' in extra:
+                    break
+
         try:
             tipo, tam = tipo_sql_a_interno(tipo_raw)
         except ValueError:

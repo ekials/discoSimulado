@@ -88,7 +88,7 @@ def construir_indice(registros_raw, estructura, campo):
         raise ValueError(f"campo '{campo}' no existe en la estructura")
     tipo = estructura[idx_campo]['tipo']
     raiz = None
-    for offset, registro in registros_raw:      # offset ya es el real del disco
+    for offset, registro in registros_raw:      
         valor_raw = registro[idx_campo]
 
         if valor_raw is None:
@@ -98,7 +98,8 @@ def construir_indice(registros_raw, estructura, campo):
         elif tipo in ('float', 'double'):
             clave = float(valor_raw)
         else:
-            clave = str(valor_raw)
+            #clave = str(valor_raw)
+            clave = str(valor_raw).lower()
 
-        raiz = insertar(raiz, clave, offset, 0)   # guarda offset real, no n_registro
+        raiz = insertar(raiz, clave, offset, 0) 
     return raiz
